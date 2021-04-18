@@ -7,4 +7,5 @@ Implementacja funkcji randomPolytope2D(), która losuje wielościan wypukły 2D 
 ### PROJEKT 3
 Zadanie polega na zaproponowaniu funkcji makePlotFunction(), której zadaniem jest zdefiniowanie funkcji do rysowania zawierającej klasę danych do rysowania, funkcję do rysowania oraz styl, który będzie wykorzystany do rysowania
 
+
 Projkety wykonane w ramach przedmiotu Podstawy R.
