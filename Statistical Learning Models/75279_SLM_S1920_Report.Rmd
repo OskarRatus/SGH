@@ -1,0 +1,193 @@
+---
+title: "Final Report"
+author: "Oskar Ratus 75279"
+date: "9.06.2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r, echo=FALSE, include=FALSE}
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(AMORE)
+library(ROCR)
+
+ConfusionMatrix <- function(prediction, testSet){
+  out <- list(ConfusionMatrix = table(c(), c()),
+              Accuracy = NA)
+  out$ConfusionMatrix <- table(round(prediction), round(testSet), dnn = list("Prediction", "Reference"))
+  out$Accuracy <- sum(diag(out$ConfusionMatrix))/sum(out$ConfusionMatrix)
+  return(out)
+}
+
+LEGEND_LABELS = c("training", "test")
+ShowCurve = function(list, name, AUC = FALSE, legend.position = "right") {
+  for (i in 1:length(list)) {
+    plot(list[[i]], main = paste(name, " curve"),
+         col = gray((i - 1) / 4), lwd = 2, add = (i != 1), xlim = c(0, 1))
+    if (AUC) {
+      text(.2, 0.9 - i * 0.1, pos = 4, col = gray((i - 1) / 4), cex = .9,
+           paste("AUC =", round(auc[[i]]@y.values[[1]], digit = 2)))
+    }
+  }
+  legend(legend.position, lty = 2, lwd = 2, col = gray(0:3 / 4),
+         y.intersp = .6, legend = LEGEND_LABELS, seg.len = 0.6, bty = "n")
+}
+set.seed(10)
+```
+
+
+## Introduction
+<!-- labels 'good' / 'bad' were assigned manually by experts -->
+<!-- structure of the data, 7 pulse pattern, 17 lag number  -->
+<!-- real and imaginary part -->
+<!-- no of radars -->
+<!-- goose bay -->
+This radar data was collected by a system in Goose Bay, Labrador. This system consists of a phased array of 16 high-frequency antennas with a total transmitted power on the order of 6.4 kilowatts.  The targets were free electrons in the ionosphere."Good" radar returns are those showing evidence of some type of structure in the ionosphere. "Bad" returns are those that do not; their signals passthrough the ionosphere. During the period of data collection (1986 - 1987), the radar used a seven pulse pattern, resulting in 17 lag numbers. Each lag consisits of two parts the real part and the imaginary part which gives 34 total number of variables plus 35 variable. The last varible was manually assigned by an expert and would serve as target variable for net to learn the patterns. The returns are characterized by exponentially damped cosine for real part of the returns and exponentially damped sine functions for imaginary part of the returns. The networks used in this paper were trained to discriminate "good" from "bad" radar backscattered signals from the ionospheric density irregularities or clutters. The data was colleted from UCI repository.
+
+```{r}
+data = read.csv("https://archive.ics.uci.edu/ml/machine-learning-databases/ionosphere/ionosphere.data", header = FALSE)
+Re <- seq(1,34,2)
+Im <- seq(2,34,2)
+
+```
+
+## Preprocessing
+<!-- * no missing data -->
+<!-- * standardized -->
+<!-- * autocorrelation function ACF -->
+<!-- * splitting data -->
+<!-- continious -->
+<!-- * boxplot of the data -->
+
+The data collected from UCI repository was already standardised and preprocessed using autocorelation function. For the purpose of the analysis in this paper, it is sufficient mentioning that the radar utilizes a multipulse technique to determine complex autocorrelation function (ACF). From these ACFs several parameters can be extracted for further analysis, but this is above the scope of this paper. Received signals were processed using an autocorrelation function whose arguments are the time of a pulse and the pulse number. There were 17 pulse numbers for the Goose Bay system. Instances in this dataset are described by 2 attributes per pulse number, corresponding to the complex values returned by the function resulting from the electromagnetic signal.Because of the methodology of radar data colletion there was no missing data in the dataset.
+
+```{r}
+par(mfrow = c(1,2))
+boxplot(data[,Re], ylim = c(-1,1), main = "Real part")
+boxplot(data[,Im], ylim = c(-1,1), main = "Imaginary part")
+```
+
+```{r}
+# recode target values
+names(data)[35] <- "target"
+data[, 35] <- sapply(data[,35], function(x) ifelse(x == 'g', 1, 0))
+# splitting data
+train <- data[1:200,]
+test  <- data[200:351,]
+
+```
+
+As to maintain better code readablity  some changes were made to the dataset. Target column was recoded from character type (either 'g' or 'b') corresponding to 'good' and 'bad' ACFs to binary output. The goal is to reach the highest accuracy with new returns from inosphere gathered by radars. The data was splitted into training and testing subset. As there is nearly no correlation between observations, so there is no need to randomly divide sample. According to this the data set was splitted into first 200 observations as training set and the rest serves as a test set. This gives us nearly equaly divieded training set as shown below.
+```{r}
+## Training balance
+table(train[,35])
+ggplot(train, aes(x = factor(target)), xlab("test")) +
+  geom_bar() +
+  xlab("Target")
+```
+
+
+## EDA
+<!-- * show good radar return and bad on plot -->
+
+As the data is already preprocessed and corresponds to complex numbers it is hard to perform any of the exploratory data analysis. There is no general dependance on variable to variable in this dataset as the data shows ACFs. Ideally, the 'good' ACFs have the real and imaginary parts behave approximately like exponentially damped cosine and sine functions respectively. In reality it can vary unsless the general pattern is preserved. Bad points can occur on the basis of e.g. incoherent scattering and are discussed widely in [Hanuise et al., 1985]. The criteria for selecting usable and unusable ACFs are the same as those used in the standard DARN/Super- DARN ACF analysis [Baker et al., 1988] and are above the scope of this paper.
+
+
+
+Below figures shows an example of 'good' and 'bad' ACFs from the dataset. Blue line describes lags of real part and blue dashed line describes imaginary part corresponding to the complex return of the radar.
+
+```{r}
+par(mfrow = c(1,2))
+# Good
+t(data[1,Re]) %>% plot(type = 'l', ylim = c(-1,1), col = 'blue', ylab = "Normalized power", xlab = "Lag", main = "Good return")
+t(data[1,Im]) %>% lines(type = 'l', lty = 2, col = 'red')
+# Bad
+t(data[2,Re]) %>% plot(type = 'l', ylim = c(-1,1), col = 'blue', ylab = "Normalized power", xlab = "Lag", main = "Bad return")
+t(data[2,Im]) %>% lines(type = 'l', lty = 2, col = 'red')
+
+```
+
+
+## Fitting the model
+
+The networks that would be used in this paper are feedforward neural networks implemented in AMORE package. The networks compromise of input layer, one hidden layer and output layer. Input layer serves only as a distribution of the input data and do not perform any computations. Passed arguments form the first layer are used in the second layer to perform all calculations and then the results are passed to the output. The number of hidden nodes vary from 3 to 15 as to find the best specification. Since the network is currently used to classify the inputs into only two classes (good and bad), only one output node was needed. This node outputs a 1 for a usable ACF and 0 for a unusable ACF. The sigmoid  function was the activation function of choice for hidden layer. Criterium used to measure to proximity of the neural network prediction to its target was chosen to be Least Mean Squares (LMS). Training method of choice was Adaptive gradient descent as widely used in the literature.
+
+```{r}
+mResult <- matrix(NA, nrow = 5, ncol = 2)
+s <- c(3,5,8,10,15)
+results <- matrix(NA, nrow = nrow(train), ncol = length(s))
+
+for (j in 1:5) {
+  out <- rep(NA, 10)
+  acc_opt <- 0
+  for (i in 1:10) {
+    set.seed(j)
+    nn1 <- newff(n.neurons = c(34, s[j],1), learning.rate.global = 1e-2, momentum.global = 0.5, error.criterium = "LMS", hidden.layer = "sigmoid",
+                 output.layer = "sigmoid", method = "ADAPTgd")
+    fit1 <- train(nn1, train[,1:34], train[,35], error.criterium = "LMS", report = F, show.step = 200, n.shows = 10)
+    res1 <- sim(fit1$net, train[,1:34])
+    res1 <- round(res1, 0)
+    out[i] <- ConfusionMatrix(res1, train[,35])$Accuracy
+    if (out[i] > acc_opt) {
+      acc_opt <- out[i]
+      results[,j] <- res1
+      }
+    
+  }
+  mResult[j,1] <- mean(out)
+  mResult[j,2] <- sd(out)
+}
+plot(y = mResult[,1], x = c(3,5,8,10,15), type = "b", ylim = c(0.9, 1), ylab = "Mean error", xlab = "Number of hidden neurons")
+```
+
+Above plot shows the percent of correct classification of neural networks on the training set as a function of the number of hidden nodes. The curve is an average of results for ten networks with different initial weights. As it can be seen the number of hidden nodes does not change overall accuracy at significant rate. The plot is nearly linear averaging on 97% of Accuracy with the highest value for 3 hidden nodes. Thus for further analysis the smallest net would be chosen as the computational cost is the lowest and the accuracy on training set is the highest. Next step is to check how the net behave on test data.
+```{r}
+set.seed(10)
+nn1 <- newff(n.neurons = c(34, 3,1), learning.rate.global = 1e-2, momentum.global = 0.5, error.criterium = "LMS", hidden.layer = "sigmoid",
+             output.layer = "sigmoid", method = "ADAPTgd")
+fit1 <- train(nn1, train[,1:34], train[,35], error.criterium = "LMS", report = F, show.step = 200, n.shows = 10)
+res1 <- sim(fit1$net, test[,1:34])
+res1 <- round(res1, 0)
+ConfusionMatrix(res1, test[,35])
+
+```
+
+The net reached accuracy on the level of 95% which is only 2-3% less than on the training subset. According to the paper by Sigillito et al. they reached similar model performance (96% accuracy on average). It is worth noting that there was no badly predicted true values. This is important as the general task is to classify observations for further anaysis.
+
+The next step would be checking on ROC curve
+```{r}
+set.seed(10)
+score.or.class = gain = lift = roc = auc = prediction.object = list()
+score.or.class[[1]] = list(sim(fit1$net, train[,1:34]),
+                           train$target)
+score.or.class[[2]] = list(sim(fit1$net, test[,1:34]),
+                           test$target)
+for (i in 1:length(score.or.class)) {
+  prediction.object[[i]] = prediction(score.or.class[[i]][[1]],
+                                      score.or.class[[i]][[2]])
+  gain[[i]] = performance(prediction.object[[i]], "tpr", "rpp")
+  lift[[i]] = performance(prediction.object[[i]], "lift", "rpp")
+  roc[[i]] = performance(prediction.object[[i]], "tpr", "fpr")
+  auc[[i]] = performance(prediction.object[[i]], "auc")
+}
+ShowCurve(roc, "ROC", AUC = TRUE)
+```
+
+The ROC curve shows the trade-off between sensitivity and specificity. Classifiers that give curves closer to the top-left corner indicate a better performance. As a baseline, a random classifier is expected to give points lying along the diagonal of the plot. The closer the curve comes to the 45-degree diagonal of the ROC space, the less accurate the test. The AUC score of 1 would be perfect example where, every observation is correctly classified. The upper line is the performance on the training set and the lower line is the performance on the test subset. In this case the score of lower line is very close to one. The net did very well one this test and achieved high Area Under the Curve score, making it correctly classify nearly all observations. This confirms that the net is performing very good on such  problem as radar data classification.
+
+## Summary
+This paper has demonstrated that feedforward neural nets are suited very well on classification of radar signals task. Morover the net consisted only of one hidden layer and 3 nodes which made it computationally efficient. The  experimental showed that the accuracy of neural network classifier is 95.39%. According to the evaluation results of other papers on this dataset Wing et al. reached 96% accuracy with similar model, Aung Nway Oo reached 82.35% of accuracy with Naïve Bayes classifier, 88.23% with Naïve Bayes Tree and 89.916% in NB-Tree classifier using Correlation-based Feature Subset Selection. This shows that the model outperforms other algorithms and could operate at a level of performance high enough to be a real aid in the automation of the classification task.
+
+
+## References
+* Hanuise, C., R. A. Greenwald, and K. B. Baker, Drift motionsof very high latitude F region irregularities: Azimuthal Dop-pler analysis, J. Geophys. Res., 90, 9717 –9725, 1985
+
+* Baker, K. B., R. A. Greenwald, J. P. Villain, and S. Wing,Spectral characteristics of high frequency backscatter fromhigh latitude ionospheric irregularities: A statistical survey,Tech. Rep. RADC-TR-87-284, Rome Air Dev. Cent., GriffissAir Force Base, N. Y., 1988.
+
+* Aung Nway Oo "Classification of Radar Returns from Ionosphere Using NB-Tree and CFS" Published in International Journal of Trend in Scientific Research and Development (ijtsrd), ISSN: 2456-6470, Volume-2 | Issue-5 , August 2018
+
+* Wing, S., R. A. Greenwald, C.-I. Meng, V. G. Sigillito, and L. V. Hutton, Neural networks for automated
+classification of ionospheric irregularities in HF radar backscattered signals, Radio Sci., 38(4), 1063,
+doi:10.1029/2003RS002869, 2003
