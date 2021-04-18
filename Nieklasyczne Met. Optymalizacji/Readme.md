@@ -1,0 +1,1 @@
+Implementacja wybranych heurystyk.
