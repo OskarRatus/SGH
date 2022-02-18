@@ -1,7 +1,10 @@
 # SGH
 
-# nagłówek
+# nagłówek1
 teskt1
 
-## podnagłówek
+## podnagłówek 2
 tekst2
+
+### podnagłówek 3
+tekst3
